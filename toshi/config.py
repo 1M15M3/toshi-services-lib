@@ -104,5 +104,8 @@ def setup_config():
 
     return config
 
-tornado.options.parse_command_line()
+try:
+    tornado.options.parse_command_line()
+except Exception as e:
+    tornado.log.gen_log.warning("error parsing tornado commandline: {}".format(e))
 config = setup_config()
