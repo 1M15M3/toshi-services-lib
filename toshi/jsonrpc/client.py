@@ -223,7 +223,27 @@ class JsonRPCClient:
         block = validate_block_param(block)
         return self._fetch("eth_getCode", [address, block])
 
-    def eth_getLogs(self, fromBlock=None, toBlock=None, address=None, topics=None):
+    async def _eth_getLogs_with_block_number_validation(self, kwargs):
+        req_start = time.time()
+        from_block = parse_int(kwargs.get('fromBlock', None))
+        to_block = parse_int(kwargs.get('toBlock', None))
+        while True:
+            bulk = self.bulk()
+            bn_future = bulk.eth_blockNumber()
+            lg_future = bulk._fetch("eth_getLogs", [kwargs])
+            await bulk.execute()
+            bn = bn_future.result()
+            if (from_block and bn < from_block) or (to_block and bn < to_block):
+                if self.should_retry and time.time() - req_start < self._request_timeout:
+                    await asyncio.sleep(random.random())
+                    continue
+                raise JsonRPCError(None, -32000, "Unknown block number", None)
+            return lg_future.result()
+
+    def eth_getLogs(self, fromBlock=None, toBlock=None, address=None, topics=None, validate_block_number=True):
+        """validate_block_number (default True), if True will also check the node's
+        current blockNumber and make sure it is not lower than either the fromBlock
+        or toBlock arguments"""
 
         kwargs = {}
         if fromBlock:
@@ -245,7 +265,10 @@ class JsonRPCClient:
                         raise TypeError("topics must be an array of DATA")
             kwargs['topics'] = topics
 
-        return self._fetch("eth_getLogs", [kwargs])
+        if validate_block_number and (fromBlock or toBlock):
+            return self._eth_getLogs_with_block_number_validation(kwargs)
+        else:
+            return self._fetch("eth_getLogs", [kwargs])
 
     def eth_call(self, *, to_address, from_address=None, gas=None, gasprice=None, value=None, data=None, block="latest"):
 
@@ -327,6 +350,7 @@ class JsonRPCClient:
         self._bulk_data = []
         futures = self._bulk_futures.copy()
         self._bulk_futures = {}
+        req_start = time.time()
 
         retries = 0
         while True:
@@ -340,10 +364,10 @@ class JsonRPCClient:
             except:
                 self.log.error("Error in JsonRPCClient.execute: retry {}".format(retries))
                 retries += 1
-                # give up after a "while"
-                if not self.should_retry or retries >= 5:
+                # give up after the request timeout
+                if not self.should_retry or time.time() - req_start >= self._request_timeout:
                     raise
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(random.random())
             else:
                 break
 
