@@ -8,7 +8,7 @@ if sys.version_info[:2] < (3, 5):
 
 setup(
     name='toshi-services',
-    version='0.0.7',
+    version='0.0.9',
     author='Tristan King',
     author_email='tristan.king@gmail.com',
     packages=['toshi'],

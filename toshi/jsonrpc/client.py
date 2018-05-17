@@ -42,7 +42,7 @@ def validate_block_param(param):
 
 class JsonRPCClient:
 
-    def __init__(self, url, should_retry=True, log=None, max_clients=100, bulk_mode=False, request_timeout=30.0):
+    def __init__(self, url, should_retry=True, log=None, max_clients=500, bulk_mode=False, request_timeout=30.0):
         self._url = url
         self._max_clients = max_clients
         self._request_timeout = request_timeout
@@ -56,7 +56,7 @@ class JsonRPCClient:
         self._bulk_futures = {}
         self._bulk_data = []
 
-    def _fetch(self, method, params=None, result_processor=None):
+    def _fetch(self, method, params=None, result_processor=None, connect_timeout=5.0, request_timeout=5.0):
         id = random.randint(0, 1000000)
 
         if params is None:
@@ -78,9 +78,9 @@ class JsonRPCClient:
             self._bulk_futures[id] = (future, result_processor)
             return future
 
-        return self._execute_single(data, result_processor)
+        return self._execute_single(data, result_processor, connect_timeout=connect_timeout, request_timeout=request_timeout)
 
-    async def _execute_single(self, data, result_processor):
+    async def _execute_single(self, data, result_processor, connect_timeout=5.0, request_timeout=5.0):
         # NOTE: letting errors fall through here for now as it means
         # there is something drastically wrong with the jsonrpc server
         # which means something probably needs to be fixed
@@ -92,14 +92,18 @@ class JsonRPCClient:
                     self._url,
                     method="POST",
                     headers={'Content-Type': "application/json"},
-                    body=tornado.escape.json_encode(data)
+                    body=tornado.escape.json_encode(data),
+                    connect_timeout=connect_timeout,
+                    request_timeout=request_timeout
                 )
             except Exception as e:
                 self.log.error("Error in JsonRPCClient._fetch ({}, {}) \"{}\" attempt {}".format(
                     data['method'], data['params'], str(e), retries))
                 retries += 1
-                # give up after a "while"
-                if not self.should_retry or time.time() - req_start >= self._request_timeout:
+                if isinstance(e, tornado.httpclient.HTTPError) and e.code == 599:
+                    # always retry after 599
+                    pass
+                elif not self.should_retry or time.time() - req_start >= self._request_timeout:
                     raise
                 await asyncio.sleep(random.random())
                 continue
@@ -359,17 +363,22 @@ class JsonRPCClient:
                     self._url,
                     method="POST",
                     headers={'Content-Type': "application/json"},
-                    body=tornado.escape.json_encode(data)
+                    body=tornado.escape.json_encode(data),
+                    connect_timeout=5.0,
+                    request_timeout=40.0 # higher request timeout than other operations
                 )
-            except:
+            except Exception as e:
                 self.log.error("Error in JsonRPCClient.execute: retry {}".format(retries))
                 retries += 1
-                # give up after the request timeout
-                if not self.should_retry or time.time() - req_start >= self._request_timeout:
+                if isinstance(e, tornado.httpclient.HTTPError) and e.code == 599:
+                    # always retry after 599
+                    pass
+                elif not self.should_retry or time.time() - req_start >= self._request_timeout:
+                    # give up after the request timeout
                     raise
                 await asyncio.sleep(random.random())
-            else:
-                break
+                continue
+            break
 
         rvals = tornado.escape.json_decode(resp.body)
 
