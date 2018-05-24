@@ -6,6 +6,8 @@ from toshi.jsonrpc.client import JsonRPCClient
 from toshi.jsonrpc.errors import JsonRPCError
 
 from toshi.test.ethereum.parity import requires_parity, FAUCET_ADDRESS
+from toshi.jsonrpc.aiohttp_client import HTTPClient as AIOHTTPClient
+from toshi.jsonrpc.tornado_client import HTTPClient as TornadoHTTPClient
 
 class Handler(EthereumMixin, BaseHandler):
 
@@ -22,9 +24,26 @@ class JsonRPCTest(AsyncHandlerTest):
     @gen_test
     @requires_parity
     async def test_jsonrpc_connection(self):
-
         resp = await self.fetch('/')
         self.assertEqual(resp.body, b'1606938044258990275541962092341162602522202993782792835301376')
+
+    @gen_test
+    @requires_parity(pass_parity=True)
+    async def test_tornado_jsonrpc_client(self, *, parity):
+        client = JsonRPCClient(parity.dsn()['url'], client_cls=TornadoHTTPClient)
+        block_number = await client.eth_blockNumber()
+        balance = await client.eth_getBalance(FAUCET_ADDRESS)
+        self.assertEqual(balance, 1606938044258990275541962092341162602522202993782792835301376)
+        await client.close()
+
+    @gen_test
+    @requires_parity(pass_parity=True)
+    async def test_aiohttp_jsonrpc_client(self, *, parity):
+        client = JsonRPCClient(parity.dsn()['url'], client_cls=AIOHTTPClient)
+        block_number = await client.eth_blockNumber()
+        balance = await client.eth_getBalance(FAUCET_ADDRESS)
+        self.assertEqual(balance, 1606938044258990275541962092341162602522202993782792835301376)
+        await client.close()
 
     @gen_test
     @requires_parity(pass_parity=True)
@@ -50,6 +69,7 @@ class JsonRPCTest(AsyncHandlerTest):
             self.assertEqual(e.message, "Unknown block number")
         except Exception as e:
             self.fail("unexpected exception: {}".format(e))
+        await client.close()
 
     @gen_test
     @requires_parity(pass_parity=True)
@@ -58,6 +78,7 @@ class JsonRPCTest(AsyncHandlerTest):
         block_number = await client.eth_blockNumber()
         balance = await client.eth_getBalance(FAUCET_ADDRESS, block=block_number + 2)
         self.assertEqual(balance, 1606938044258990275541962092341162602522202993782792835301376)
+        await client.close()
 
     @gen_test(timeout=30)
     @requires_parity(pass_parity=True)
@@ -77,3 +98,4 @@ class JsonRPCTest(AsyncHandlerTest):
         logs = await client.eth_getLogs(toBlock=block_number + 20, validate_block_number=False)
         self.assertLess(await client.eth_blockNumber(), block_number + 20, "eth_getLogs unexpectidly waited until the block number caught up to the requested block")
         self.assertEqual(logs, [], "parity started returning something other than [] for eth_getLogs when block params are too high")
+        await client.close()

@@ -1,3 +1,14 @@
+from http.client import responses
+
+class HTTPError(Exception):
+    def __init__(self, status, message=None):
+        self.status = status
+        self.message = message or responses.get(status, "Unknown")
+        super().__init__(status, message)
+
+    def __str__(self):
+        return "HTTP %d: %s" % (self.status, self.message)
+
 class JsonRPCError(Exception):
     def __init__(self, request_id, code, message, data, is_notification=False):
         super().__init__(message)

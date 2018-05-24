@@ -262,6 +262,12 @@ def requires_parity(func=None, difficulty=None, pass_args=False, pass_parity=Fal
                 if asyncio.iscoroutine(f):
                     await f
             finally:
+                # this is a hack for dealing with aiohttp "Unclosed client session" errors
+                # since if we're done with the test we don't need the clients any more
+                # so we can shut them all down
+                from toshi.jsonrpc.aiohttp_client import HTTPClient
+                for c in list(HTTPClient._async_clients().values()):
+                    await c.close()
                 # no need for graceful shutdown, and waiting takes a long time, JUST KILL IT!
                 ethminer.stop(_signal=signal.SIGKILL)
                 parity.stop(_signal=signal.SIGKILL)

@@ -2,6 +2,7 @@ import asyncio
 import logging
 import tornado.escape
 import tornado.httputil
+import tornado.httpclient
 import tornado.websocket
 import tornado.ioloop
 import tornado.testing
@@ -147,14 +148,16 @@ class AsyncHandlerTest(tornado.testing.AsyncHTTPTestCase):
         return logging.getLogger(self.__class__.__name__)
 
     def setUp(self, extraconf=None):
-        # TODO: re-enable this and figure out if any of the warnings matter
-        warnings.simplefilter("ignore")
+        # ignore socket warnings caused when calling .fetch()
+        # remove when it's figured out why this is happening
+        warnings.simplefilter("ignore", ResourceWarning)
         conf = {
             'general': {'debug': True},
         }
         if extraconf:
             conf.update(extraconf)
         config._push()
+        self.addCleanup(lambda: config._pop())
         config.read_dict(conf)
         super(AsyncHandlerTest, self).setUp()
 
@@ -174,7 +177,6 @@ class AsyncHandlerTest(tornado.testing.AsyncHTTPTestCase):
 
     def tearDown(self):
         super(AsyncHandlerTest, self).tearDown()
-        config._pop()
 
     def fetch(self, req, **kwargs):
         headers = kwargs.setdefault('headers', {})
@@ -197,8 +199,7 @@ class AsyncHandlerTest(tornado.testing.AsyncHTTPTestCase):
             url = req
         else:
             url = self.get_url(req)
-
-        return self.http_client.fetch(url, self.stop, **kwargs)
+        return self.http_client.fetch(url, **kwargs)
 
     def assertResponseCodeEqual(self, response, expected_code, message=None):
         """Asserts that the response code was what was expected, with the addition
