@@ -54,14 +54,21 @@ def validate_block_param(param):
 
 class JsonRPCClient:
 
-    def __init__(self, url, should_retry=True, log=None, max_clients=500, bulk_mode=False, request_timeout=30.0, client_cls=None):
+    def __init__(self, url, should_retry=True, log=None, max_clients=500, bulk_mode=False,
+                 connect_timeout=5.0, request_timeout=30.0, client_cls=None, **kwargs):
         self._url = url
         self._max_clients = max_clients
         self._request_timeout = request_timeout
+        self._connect_timeout = connect_timeout
         if client_cls:
-            self._httpclient = client_cls(max_clients=self._max_clients, connect_timeout=5.0)
+            self._client_cls = client_cls
+            self._httpclient = client_cls(max_clients=self._max_clients,
+                                          connect_timeout=self._connect_timeout, **kwargs)
         else:
-            self._httpclient = HTTPClient(max_clients=self._max_clients, connect_timeout=5.0)
+            self._client_cls = None
+            self._httpclient = HTTPClient(max_clients=self._max_clients,
+                                          connect_timeout=self._connect_timeout, **kwargs)
+        self._client_kwargs = kwargs
         if log is None:
             self.log = JSONRPC_LOG
         else:
@@ -71,7 +78,11 @@ class JsonRPCClient:
         self._bulk_futures = {}
         self._bulk_data = []
 
-    def _fetch(self, method, params=None, result_processor=None, request_timeout=5.0):
+    def _fetch(self, method, params=None, result_processor=None, request_timeout=None):
+
+        if request_timeout is None:
+            request_timeout = self._request_timeout
+
         id = random.randint(0, 1000000)
 
         if params is None:
@@ -95,7 +106,9 @@ class JsonRPCClient:
 
         return self._execute_single(data, result_processor, request_timeout=request_timeout)
 
-    async def _execute_single(self, data, result_processor, request_timeout=5.0):
+    async def _execute_single(self, data, result_processor, request_timeout=None):
+        if request_timeout is None:
+            request_timeout = self._request_timeout
         # NOTE: letting errors fall through here for now as it means
         # there is something drastically wrong with the jsonrpc server
         # which means something probably needs to be fixed
@@ -116,7 +129,7 @@ class JsonRPCClient:
                 if self.should_retry and isinstance(e, HTTPError) and e.status == 599:
                     # always retry after 599
                     pass
-                elif not self.should_retry or time.time() - req_start >= self._request_timeout:
+                elif not self.should_retry or time.time() - req_start >= request_timeout:
                     raise
                 await asyncio.sleep(random.random())
                 continue
@@ -133,7 +146,7 @@ class JsonRPCClient:
                 # TODO: this is only supported by parity: geth returns "<nil>" when the block number if too high
                 if 'message' in rval['error'] and rval['error']['message'] == "Unknown block number":
                     retries += 1
-                    if self.should_retry and time.time() - req_start < self._request_timeout:
+                    if self.should_retry and time.time() - req_start < request_timeout:
                         await asyncio.sleep(random.random())
                         continue
                 raise JsonRPCError(rval['id'], rval['error']['code'], rval['error']['message'], rval['error']['data'] if 'data' in rval['error'] else None)
@@ -358,7 +371,10 @@ class JsonRPCClient:
         return self._fetch("net_version", [])
 
     def bulk(self):
-        return JsonRPCClient(self._url, self.should_retry, self.log, max_clients=self._max_clients, bulk_mode=True, request_timeout=self._request_timeout)
+        return JsonRPCClient(self._url, self.should_retry, self.log, max_clients=self._max_clients,
+                             bulk_mode=True, request_timeout=self._request_timeout,
+                             connect_timeout=self._connect_timeout,
+                             client_cls=self._client_cls, **self._client_kwargs)
 
     async def execute(self):
         if not self._bulk_mode:
@@ -379,7 +395,7 @@ class JsonRPCClient:
                     self._url,
                     method="POST",
                     body=data,
-                    request_timeout=40.0 # higher request timeout than other operations
+                    request_timeout=60.0 # higher request timeout than other operations
                 )
             except Exception as e:
                 self.log.error("Error in JsonRPCClient.execute: retry {}".format(retries))

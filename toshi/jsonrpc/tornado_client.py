@@ -19,9 +19,10 @@ class HTTPResponse:
 
 class HTTPClient:
 
-    def __init__(self, *, max_clients=100, connect_timeout=20.0):
-        self._httpclient = AsyncHTTPClient(max_clients=max_clients)
+    def __init__(self, *, max_clients=100, connect_timeout=20.0, verify_ssl=True, **kwargs):
+        self._httpclient = AsyncHTTPClient(max_clients=max_clients, **kwargs)
         self._connect_timeout = connect_timeout
+        self._verify_ssl = verify_ssl
 
     async def fetch(self, url, *, method="GET", headers=None, body=None, request_timeout=30.0):
         if isinstance(body, (dict, list)):
@@ -34,6 +35,7 @@ class HTTPClient:
                                             method=method,
                                             headers=headers,
                                             body=body,
+                                            validate_cert=self._verify_ssl,
                                             request_timeout=request_timeout,
                                             connect_timeout=self._connect_timeout,
                                             raise_error=False)

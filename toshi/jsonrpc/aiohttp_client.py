@@ -30,9 +30,10 @@ class HTTPClient:
         instance.initialise(**kwargs)
         return instance
 
-    def initialise(self, *, max_clients=100, connect_timeout=None):
+    def initialise(self, *, max_clients=100, connect_timeout=None, verify_ssl=True):
         connector = aiohttp.TCPConnector(
             limit=max_clients)
+        self._verify_ssl = verify_ssl
         self._session = aiohttp.ClientSession(connector=connector, conn_timeout=connect_timeout)
 
     async def fetch(self, url, *, method="GET", headers=None, body=None, request_timeout=None):
@@ -45,7 +46,7 @@ class HTTPClient:
         if request_timeout:
             kwargs['timeout'] = request_timeout
         try:
-            resp = await fn(url, headers=headers, **kwargs)
+            resp = await fn(url, headers=headers, ssl=self._verify_ssl, **kwargs)
             if resp.status < 200 or resp.status >= 300:
                 raise HTTPError(resp.status, message=resp.reason)
             return resp
@@ -56,4 +57,5 @@ class HTTPClient:
 
     async def close(self):
         await self._session.close()
-        del self._instance_cache[self._loop]
+        if self._instance_cache is not None:
+            del self._instance_cache[self._loop]
