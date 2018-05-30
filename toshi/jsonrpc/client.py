@@ -126,7 +126,7 @@ class JsonRPCClient:
                 self.log.error("Error in JsonRPCClient._fetch ({}, {}) \"{}\" attempt {}".format(
                     data['method'], data['params'], str(e), retries))
                 retries += 1
-                if self.should_retry and isinstance(e, HTTPError) and e.status == 599:
+                if self.should_retry and isinstance(e, HTTPError) and (e.status == 599 or e.status == 502):
                     # always retry after 599
                     pass
                 elif not self.should_retry or time.time() - req_start >= request_timeout:
@@ -400,7 +400,7 @@ class JsonRPCClient:
             except Exception as e:
                 self.log.error("Error in JsonRPCClient.execute: retry {}".format(retries))
                 retries += 1
-                if self.should_retry and isinstance(e, HTTPError) and e.status == 599:
+                if self.should_retry and isinstance(e, HTTPError) and (e.status == 599 or e.status == 502):
                     # always retry after 599
                     pass
                 elif not self.should_retry or time.time() - req_start >= self._request_timeout:
