@@ -370,8 +370,10 @@ class JsonRPCClient:
 
         return self._fetch("net_version", [])
 
-    def bulk(self):
-        return JsonRPCClient(self._url, self.should_retry, self.log, max_clients=self._max_clients,
+    def bulk(self, should_retry=None):
+        if should_retry is None:
+            should_retry = self.should_retry
+        return JsonRPCClient(self._url, should_retry, self.log, max_clients=self._max_clients,
                              bulk_mode=True, request_timeout=self._request_timeout,
                              connect_timeout=self._connect_timeout,
                              client_cls=self._client_cls, **self._client_kwargs)
